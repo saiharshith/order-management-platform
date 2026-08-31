@@ -1,4 +1,4 @@
-package io.github.saiharshith.order_management_platform;
+package io.github.saiharshith.ordermanagementplatform;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

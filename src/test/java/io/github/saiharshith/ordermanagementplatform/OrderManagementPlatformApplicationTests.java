@@ -1,4 +1,4 @@
-package io.github.saiharshith.order_management_platform;
+package io.github.saiharshith.ordermanagementplatform;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
