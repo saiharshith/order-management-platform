@@ -12,7 +12,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -25,14 +26,14 @@ public class OrderController {
     }
 
     @GetMapping
-    public Collection<Order> getAllOrders() {
+    public List<Order> getAllOrders() {
         return orderRepository.findAll();
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Order> getOrder(@PathVariable Long id) {
-        Order order = orderRepository.findById(id);
-        return order != null ? ResponseEntity.ok(order) : ResponseEntity.notFound().build();
+        Optional<Order> order = orderRepository.findById(id);
+        return order.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping
@@ -47,10 +48,11 @@ public class OrderController {
 
     @PutMapping("/{id}")
     public ResponseEntity<Order> updateOrder(@PathVariable Long id, @RequestBody Order updatedOrder) {
-        Order existing = orderRepository.findById(id);
-        if (existing == null) {
+        Optional<Order> existingOpt = orderRepository.findById(id);
+        if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
+        Order existing = existingOpt.get();
         existing.setCustomerName(updatedOrder.getCustomerName());
         existing.setItem(updatedOrder.getItem());
         existing.setQuantity(updatedOrder.getQuantity());
@@ -60,7 +62,10 @@ public class OrderController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteOrder(@PathVariable Long id) {
-        boolean deleted = orderRepository.deleteById(id);
-        return deleted ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+        if (!orderRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        orderRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 }
