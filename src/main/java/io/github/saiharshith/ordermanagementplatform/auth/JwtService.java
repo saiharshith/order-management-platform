@@ -1,5 +1,6 @@
 package io.github.saiharshith.ordermanagementplatform.auth;
 
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,5 +32,15 @@ public class JwtService {
                 .expiration(expiry)
                 .signWith(key, Jwts.SIG.HS256)
                 .compact();
+    }
+
+    // Throws JwtException (expired/malformed/bad signature) or IllegalArgumentException on failure.
+    public String extractUsername(String token) {
+        Claims claims = Jwts.parser()
+                .verifyWith(key)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        return claims.getSubject();
     }
 }
