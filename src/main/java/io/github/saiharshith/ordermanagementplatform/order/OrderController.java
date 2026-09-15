@@ -21,55 +21,43 @@ import java.util.Optional;
 @RequestMapping("/api/orders")
 public class OrderController {
 
-    private final OrderRepository orderRepository;
+    private final OrderService orderService;
 
-    public OrderController(OrderRepository orderRepository) {
-        this.orderRepository = orderRepository;
+    public OrderController(OrderService orderService) {
+        this.orderService = orderService;
     }
 
     @GetMapping
     public List<Order> getAllOrders() {
-        return orderRepository.findAll();
+        return orderService.findAll();
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Order> getOrder(@PathVariable Long id) {
-        Optional<Order> order = orderRepository.findById(id);
+        Optional<Order> order = orderService.findById(id);
         return order.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Order createOrder(@Valid @RequestBody Order order) {
-        order.setId(null);
-        if (order.getStatus() == null) {
-            order.setStatus(OrderStatus.CREATED);
-        }
-        return orderRepository.save(order);
+        return orderService.create(order);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Order> updateOrder(@PathVariable Long id, @Valid @RequestBody Order updatedOrder) {
-        Optional<Order> existingOpt = orderRepository.findById(id);
-        if (existingOpt.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
-        Order existing = existingOpt.get();
-        existing.setCustomerName(updatedOrder.getCustomerName());
-        existing.setItem(updatedOrder.getItem());
-        existing.setQuantity(updatedOrder.getQuantity());
-        existing.setStatus(updatedOrder.getStatus());
-        return ResponseEntity.ok(orderRepository.save(existing));
+        return orderService.update(id, updatedOrder)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteOrder(@PathVariable Long id) {
-        if (!orderRepository.existsById(id)) {
+        if (!orderService.delete(id)) {
             return ResponseEntity.notFound().build();
         }
-        orderRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }
 }
