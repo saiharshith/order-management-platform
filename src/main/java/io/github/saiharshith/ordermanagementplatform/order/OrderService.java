@@ -25,13 +25,13 @@ public class OrderService {
 
     @Cacheable("allOrders")
     public List<Order> findAll() {
-        log.info("Fetching all orders from the database");
+        log.debug("Fetching all orders from the database");
         return orderRepository.findAll();
     }
 
     @Cacheable(value = "orderById", key = "#id")
     public Optional<Order> findById(Long id) {
-        log.info("Fetching order {} from the database", id);
+        log.debug("Fetching order {} from the database", id);
         return orderRepository.findById(id);
     }
 
@@ -41,7 +41,9 @@ public class OrderService {
         if (order.getStatus() == null) {
             order.setStatus(OrderStatus.CREATED);
         }
-        return orderRepository.save(order);
+        Order saved = orderRepository.save(order);
+        log.info("Created order {}", saved.getId());
+        return saved;
     }
 
     public Optional<Order> update(Long id, Order updatedOrder) {
@@ -73,6 +75,7 @@ public class OrderService {
         cacheManager.getCache("orderById").evict(id);
         cacheManager.getCache("allOrders").clear();
 
+        log.info("Deleted order {}", id);
         return true;
     }
 }
