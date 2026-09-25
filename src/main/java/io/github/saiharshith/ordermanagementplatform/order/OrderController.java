@@ -40,13 +40,15 @@ public class OrderController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Order createOrder(@Valid @RequestBody Order order) {
+    public Order createOrder(@Valid @RequestBody CreateOrderRequest request) {
+        Order order = new Order(null, request.customerName(), request.item(), request.quantity(), request.status());
         return orderService.create(order);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Order> updateOrder(@PathVariable Long id, @Valid @RequestBody Order updatedOrder) {
+    public ResponseEntity<Order> updateOrder(@PathVariable Long id, @Valid @RequestBody UpdateOrderRequest request) {
+        Order updatedOrder = new Order(null, request.customerName(), request.item(), request.quantity(), request.status());
         return orderService.update(id, updatedOrder)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());

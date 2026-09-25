@@ -101,6 +101,18 @@ class OrderApiIntegrationTest {
     }
 
     @Test
+    void createOrder_withoutStatus_defaultsToCreated() throws Exception {
+        String token = registerAndLogin(uniqueUsername(), "password123");
+
+        mockMvc.perform(post("/api/orders")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderJson("Alice", "Widget", 2, null)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("CREATED"));
+    }
+
+    @Test
     void regularUser_canCreateAndReadOwnOrder_butCannotUpdateOrDelete() throws Exception {
         String token = registerAndLogin(uniqueUsername(), "password123");
 
