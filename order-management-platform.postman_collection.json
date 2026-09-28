@@ -1,0 +1,422 @@
+{
+  "info": {
+    "name": "Order Management Platform - Explore",
+    "description": "Guided walkthrough of everything built so far: auth, roles, validation, caching, correlation IDs, and observability.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "bd813929-fc73-4998-a525-02ad79b0aed7"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "demoUsername",
+      "value": ""
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "adminUsername",
+      "value": "admin"
+    },
+    {
+      "key": "adminPassword",
+      "value": "change-me-fill-in-your-local-.env-value"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "1. Register",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('demoUsername', 'explorer-' + Date.now());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{demoUsername}}\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register"
+          },
+          "description": "Expect 201. Run it again immediately (same body) and you'll get 409 - duplicate username correctly rejected."
+        },
+        {
+          "name": "2. Login (regular user)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('token', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{demoUsername}}\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          },
+          "description": "Expect 200 + a JWT. The test script auto-saves it into {{token}} for the requests below."
+        },
+        {
+          "name": "3. Login (wrong password)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{demoUsername}}\",\n  \"password\": \"totally-wrong\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          },
+          "description": "Expect 401. Same response shape you'd get for a nonexistent username too - deliberate, prevents username enumeration."
+        },
+        {
+          "name": "4. Login (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('adminToken', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{adminUsername}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          },
+          "description": "Logs in as the seeded default admin. Saves the token into {{adminToken}} for the admin-only folder later. Adjust the password here if you changed ADMIN_PASSWORD in .env."
+        }
+      ]
+    },
+    {
+      "name": "2. Orders - Regular User",
+      "item": [
+        {
+          "name": "1. Create Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('orderId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Harshith\",\n  \"item\": \"Mechanical Keyboard\",\n  \"quantity\": 1\n}"
+            },
+            "url": "{{baseUrl}}/api/orders"
+          },
+          "description": "Expect 201. Status defaults to CREATED since it wasn't provided. Saves the new id into {{orderId}}."
+        },
+        {
+          "name": "2. Get All Orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/orders"
+          },
+          "description": "Expect 200 with your new order in the list. First call after any write hits the DB (cache was evicted); repeat calls within 60s are served from Redis."
+        },
+        {
+          "name": "3. Get Order By Id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/orders/{{orderId}}"
+          },
+          "description": "Run this twice in a row. Both return 200 identically - the second one is served from the Redis cache, not Postgres."
+        },
+        {
+          "name": "4. Try Update (expect 403)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Someone Else\",\n  \"item\": \"Hacked\",\n  \"quantity\": 1,\n  \"status\": \"SHIPPED\"\n}"
+            },
+            "url": "{{baseUrl}}/api/orders/{{orderId}}"
+          },
+          "description": "Expect 403, not 401 - you ARE authenticated, you just lack the ADMIN role. Compare this to the no-token request in folder 3."
+        },
+        {
+          "name": "5. Try Delete (expect 403)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/orders/{{orderId}}"
+          },
+          "description": "Expect 403, same reasoning as the update above."
+        }
+      ]
+    },
+    {
+      "name": "3. Validation & Errors",
+      "item": [
+        {
+          "name": "1. Create Order - Missing customerName (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item\": \"Widget\",\n  \"quantity\": 2\n}"
+            },
+            "url": "{{baseUrl}}/api/orders"
+          },
+          "description": "Expect 400 with a fieldErrors.customerName message - Bean Validation catching a missing required field before it ever reaches the database."
+        },
+        {
+          "name": "2. Get Orders - No Token (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/orders"
+          },
+          "description": "Expect 401 - no identity established at all. Contrast with the 403s in folder 2, where identity WAS established but permission was denied."
+        },
+        {
+          "name": "3. Get Orders - With Custom Correlation ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "postman-demo-trace-001"
+              }
+            ],
+            "url": "{{baseUrl}}/api/orders"
+          },
+          "description": "Check the response headers - X-Correlation-Id should be echoed back with the exact same value you sent. Then check your app's console log: every log line touched while handling this request should show [postman-demo-trace-001]."
+        }
+      ]
+    },
+    {
+      "name": "4. Orders - Admin",
+      "item": [
+        {
+          "name": "1. Update Order as Admin (200)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Harshith\",\n  \"item\": \"Mechanical Keyboard\",\n  \"quantity\": 1,\n  \"status\": \"SHIPPED\"\n}"
+            },
+            "url": "{{baseUrl}}/api/orders/{{orderId}}"
+          },
+          "description": "Expect 200 - same order id, now with an admin token, succeeds where the regular user got 403."
+        },
+        {
+          "name": "2. Delete Order as Admin (204)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/orders/{{orderId}}"
+          },
+          "description": "Expect 204 No Content."
+        },
+        {
+          "name": "3. Get Deleted Order (404)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/orders/{{orderId}}"
+          },
+          "description": "Expect 404 - and served correctly even though this id was cached moments ago, since delete evicts the cache entry."
+        }
+      ]
+    },
+    {
+      "name": "5. Observability",
+      "item": [
+        {
+          "name": "1. Health (no auth)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/health"
+          },
+          "description": "Expect 200, {\"status\":\"UP\"} only - no component details without an admin token."
+        },
+        {
+          "name": "2. Health (as admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/actuator/health"
+          },
+          "description": "Expect 200 with a full breakdown - Postgres and Redis should both show UP as separate components."
+        },
+        {
+          "name": "3. Metrics (as admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/actuator/metrics"
+          },
+          "description": "Expect 200 with a list of available metric names."
+        },
+        {
+          "name": "4. Prometheus (as admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/actuator/prometheus"
+          },
+          "description": "Expect 200, plain text in Prometheus's scrape format rather than JSON."
+        }
+      ]
+    }
+  ]
+}
