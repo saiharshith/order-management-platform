@@ -1,12 +1,17 @@
 package io.github.saiharshith.ordermanagementplatform.order;
 
+import io.github.saiharshith.ordermanagementplatform.outbox.OutboxEvent;
+import io.github.saiharshith.ordermanagementplatform.outbox.OutboxEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Optional;
 
@@ -27,11 +32,16 @@ class OrderServiceTest {
     @Mock
     private CacheManager cacheManager;
 
+    @Mock
+    private OutboxEventRepository outboxEventRepository;
+
+    private final ObjectMapper objectMapper = JsonMapper.builder().build();
+
     private OrderService orderService;
 
     @BeforeEach
     void setUp() {
-        orderService = new OrderService(orderRepository, cacheManager);
+        orderService = new OrderService(orderRepository, cacheManager, outboxEventRepository, objectMapper);
     }
 
     @Test
@@ -71,6 +81,27 @@ class OrderServiceTest {
         Order result = orderService.create(order);
 
         assertThat(result.getStatus()).isEqualTo(OrderStatus.PROCESSING);
+    }
+
+    @Test
+    void createSavesOutboxEventWithOrderPlacedPayload() {
+        Order order = new Order(null, "Alice", "Widget", 2, OrderStatus.CREATED);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order saved = invocation.getArgument(0);
+            saved.setId(42L);
+            return saved;
+        });
+
+        orderService.create(order);
+
+        ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxEventRepository).save(captor.capture());
+        OutboxEvent outboxEvent = captor.getValue();
+
+        assertThat(outboxEvent.getAggregateType()).isEqualTo("Order");
+        assertThat(outboxEvent.getAggregateId()).isEqualTo("42");
+        assertThat(outboxEvent.getEventType()).isEqualTo("OrderPlaced");
+        assertThat(outboxEvent.getPayload()).contains("Alice").contains("Widget");
     }
 
     @Test

@@ -1,6 +1,11 @@
 package io.github.saiharshith.ordermanagementplatform;
 
 import tools.jackson.databind.ObjectMapper;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,12 +17,18 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Properties;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -38,6 +49,10 @@ class OrderApiIntegrationTest {
     @ServiceConnection(name = "redis")
     static GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
 
+    @Container
+    @ServiceConnection
+    static KafkaContainer kafka = new KafkaContainer("apache/kafka:latest");
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -49,6 +64,9 @@ class OrderApiIntegrationTest {
 
     @Value("${admin.password}")
     private String adminPassword;
+
+    @Value("${kafka.topics.order-placed}")
+    private String orderPlacedTopic;
 
     @Test
     void registerUser_thenDuplicateUsername_returnsConflict() throws Exception {
@@ -165,6 +183,44 @@ class OrderApiIntegrationTest {
         mockMvc.perform(get("/api/orders/" + id)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void createOrder_publishesOrderPlacedEventToKafka() throws Exception {
+        String token = registerAndLogin(uniqueUsername(), "password123");
+
+        String response = mockMvc.perform(post("/api/orders")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(orderJson("Alice", "Widget", 2, "CREATED")))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String id = objectMapper.readTree(response).get("id").asString();
+
+        Properties consumerProps = new Properties();
+        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID());
+        consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps)) {
+            consumer.subscribe(Collections.singletonList(orderPlacedTopic));
+
+            boolean found = false;
+            Instant deadline = Instant.now().plusSeconds(15);
+            while (!found && Instant.now().isBefore(deadline)) {
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(500));
+                for (ConsumerRecord<String, String> record : records) {
+                    if (record.key().equals(id) && record.value().contains("\"orderId\":" + id)) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            assertThat(found).as("order.placed event for order %s should appear on Kafka", id).isTrue();
+        }
     }
 
     private String uniqueUsername() {

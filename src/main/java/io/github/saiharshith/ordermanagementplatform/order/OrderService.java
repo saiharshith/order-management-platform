@@ -1,12 +1,17 @@
 package io.github.saiharshith.ordermanagementplatform.order;
 
+import io.github.saiharshith.ordermanagementplatform.outbox.OutboxEvent;
+import io.github.saiharshith.ordermanagementplatform.outbox.OutboxEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -17,10 +22,15 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final CacheManager cacheManager;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
 
-    public OrderService(OrderRepository orderRepository, CacheManager cacheManager) {
+    public OrderService(OrderRepository orderRepository, CacheManager cacheManager,
+                         OutboxEventRepository outboxEventRepository, ObjectMapper objectMapper) {
         this.orderRepository = orderRepository;
         this.cacheManager = cacheManager;
+        this.outboxEventRepository = outboxEventRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Cacheable("allOrders")
@@ -35,6 +45,7 @@ public class OrderService {
         return orderRepository.findById(id);
     }
 
+    @Transactional
     @CacheEvict(value = "allOrders", allEntries = true)
     public Order create(Order order) {
         order.setId(null);
@@ -42,6 +53,12 @@ public class OrderService {
             order.setStatus(OrderStatus.CREATED);
         }
         Order saved = orderRepository.save(order);
+
+        OrderPlacedEvent event = new OrderPlacedEvent(saved.getId(), saved.getCustomerName(), saved.getItem(),
+                saved.getQuantity(), saved.getStatus(), Instant.now());
+        String payload = objectMapper.writeValueAsString(event);
+        outboxEventRepository.save(new OutboxEvent("Order", String.valueOf(saved.getId()), "OrderPlaced", payload, Instant.now()));
+
         log.info("Created order {}", saved.getId());
         return saved;
     }
